@@ -21,7 +21,7 @@ import SalesDashboard from './components/SalesDashboard';
 import UserProfileModal from './components/UserProfileModal';
 import BulkCreateModal from './components/BulkCreateModal';
 import NewProjectModal from './components/NewProjectModal';
-import BoardDeckView from './components/BoardDeckView';
+import ProjectManagerView from './components/ProjectManagerView';
 import { analyzeRoadmap, generateRoadmapItem } from './services/geminiService';
 import { sheetsService } from './services/googleSheetsService';
 import { JiraConfig, fetchJiraIssues, mapJiraToRoadmap } from './services/jiraService';
@@ -56,7 +56,7 @@ const App: React.FC = () => {
   const [salesData, setSalesData] = useState<SalesMetricData[]>([]);
   const [salesActions, setSalesActions] = useState<SalesActionItem[]>([]); 
   
-  const [view, setView] = useState<'alignment' | 'individual' | 'updates' | 'timeline' | 'sales' | 'boarddeck'>('alignment');
+  const [view, setView] = useState<'alignment' | 'individual' | 'updates' | 'timeline' | 'sales' | 'projectmanager'>('alignment');
   
   // Global period setting (master month/year filter)
   const [globalPeriod, setGlobalPeriod] = useState<{ month: string; year: number }>(loadSavedPeriod);
@@ -692,7 +692,7 @@ const App: React.FC = () => {
   }
 
   if (currentUser.accessLevel === 'Admin') {
-    tabs.push({ id: 'boarddeck', label: 'Board Deck' });
+    tabs.push({ id: 'projectmanager', label: 'Project Manager' });
   }
 
   return (
@@ -742,12 +742,6 @@ const App: React.FC = () => {
             {currentUser.accessLevel === 'Admin' && (
               <div className="flex items-center gap-2">
                  <button 
-                    onClick={() => setIsNewProjectOpen(true)} 
-                    className="text-sm font-medium text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg transition-colors"
-                 >
-                    New project
-                 </button>
-                 <button 
                     onClick={() => setIsBulkOpen(true)} 
                     className="text-sm font-medium text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg transition-colors"
                  >
@@ -781,7 +775,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto px-6 py-8 w-full space-y-8">
-        {view !== 'sales' && view !== 'boarddeck' && <AIInsightsPanel insights={insights} loading={loadingInsights} onRefresh={fetchInsights} />}
+        {view !== 'sales' && view !== 'projectmanager' && <AIInsightsPanel insights={insights} loading={loadingInsights} onRefresh={fetchInsights} />}
 
         <div className="pb-20">
           {view === 'alignment' ? (
@@ -834,15 +828,14 @@ const App: React.FC = () => {
             <div className="text-center py-20 text-slate-500">
               Access Restricted
             </div>
-          ) : view === 'boarddeck' && currentUser.accessLevel === 'Admin' ? (
-            <BoardDeckView
-              items={items}
-              goals={rocks}
-              monthlyUpdates={updates}
-              itemUpdates={itemUpdates}
-              employees={employees}
-              salesData={salesData}
+          ) : view === 'projectmanager' && currentUser.accessLevel === 'Admin' ? (
+            <ProjectManagerView
               currentUser={currentUser}
+              items={rbacFilteredItems}
+              employees={rbacFilteredEmployees}
+              onNewProjectClick={() => setIsNewProjectOpen(true)}
+              onEditItem={handleEditItem}
+              onViewHistory={handleViewHistory}
             />
           ) : (
             <UnifiedTimeline items={rbacFilteredItems} onItemClick={handleViewHistory} />
