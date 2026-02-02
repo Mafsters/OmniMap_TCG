@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { RoadmapItem, ItemUpdate } from '../types';
+import { RoadmapItem, ItemUpdate, HealthStatus } from '../types';
 import { HEALTH_STYLES } from '../constants';
 import Modal from './Modal';
 
@@ -103,8 +103,8 @@ const ItemHistoryModal: React.FC<ItemHistoryModalProps> = ({ item, updates, isOp
                     </span>
                     <span className={`
                       text-[10px] font-medium px-2 py-0.5 rounded-full
-                      ${u.health === 'GREEN' ? 'bg-emerald-50 text-emerald-700' :
-                        u.health === 'AMBER' ? 'bg-amber-50 text-amber-700' :
+                      ${u.health === HealthStatus.GREEN ? 'bg-emerald-50 text-emerald-700' :
+                        u.health === HealthStatus.AMBER ? 'bg-amber-50 text-amber-700' :
                         'bg-red-50 text-red-700'}
                     `}>
                       {HEALTH_STYLES[u.health]?.label || 'Unknown'}

@@ -29,6 +29,8 @@ export interface Employee {
   role: string;
   department: string; 
   team?: string;
+  /** What this person does / focus areas (e.g. "Social, partnerships, events") – used for AI task assignment */
+  responsibilities?: string;
   avatarUrl?: string;
   bio?: string;
   mission?: string; // New: "What does success look like?"
@@ -36,8 +38,10 @@ export interface Employee {
   accessLevel: AccessLevel;
   reportsTo?: string;
   salesPerformanceAccess?: string[]; 
-  /** Slack user ID for follow-up DMs (optional; n8n can lookup by email if missing) */
+  /** Slack user ID for follow-up DMs (optional) */
   slackUserId?: string;
+  /** Avatar URL (alias for avatarUrl for compatibility) */
+  avatar?: string;
 }
 
 // Google Authentication Types
@@ -83,9 +87,7 @@ export interface ItemUpdate {
   health: HealthStatus;
   content: string;
   updatedAt: string;
-  /** Where the update came from (app form, Slack reply, n8n, etc.) */
   source?: 'app' | 'slack' | 'n8n';
-  /** When a follow-up was sent (e.g. by n8n) before this reply */
   requestedAt?: string;
 }
 
@@ -112,6 +114,60 @@ export interface RoadmapItem {
   goalType?: GoalType; // HiBob: PERSONAL, DEPARTMENT, or COMPANY (default: PERSONAL)
   goalCategory?: GoalCategory; // HiBob: PERFORMANCE or DEVELOPMENT (default: PERFORMANCE)
   hibobGoalId?: string; // HiBob goal ID for check-ins and updates
+}
+
+// --- PROJECT MANAGER (separate from Goals) ---
+
+/** A project (separate from Big Rocks / goals); has tasks and optional milestones */
+export interface Project {
+  id: string;
+  title: string;
+  description: string;
+  owner: string;
+  status: Status;
+  priority?: Priority;
+  startDate: string;
+  endDate: string;
+  createdAt?: string;
+  department?: string;
+  team?: string;
+}
+
+/** A task belonging to a project */
+export interface ProjectTask {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  owner: string;
+  status: Status;
+  priority: Priority;
+  startDate: string;
+  endDate: string;
+  order?: number;
+  createdAt?: string;
+  department?: string;
+  team?: string;
+}
+
+/** Optional milestone for a project (legacy; prefer task-level milestones) */
+export interface ProjectMilestone {
+  id: string;
+  projectId: string;
+  title: string;
+  dueDate: string;
+  completed: boolean;
+  completedAt?: string;
+}
+
+/** Progress milestone for a task – e.g. biweekly check-ins for long-running tasks */
+export interface TaskMilestone {
+  id: string;
+  taskId: string;
+  title: string;
+  dueDate: string;
+  completed: boolean;
+  completedAt?: string;
 }
 
 // --- SALES MODULE TYPES ---
@@ -179,7 +235,15 @@ export type ActionType =
   | 'PUSH_GOALS_HIBOB'   
   | 'SYNC_WORKABLE_JOBS'
   | 'SYNC_SALESFORCE'
-  | 'RECORD_UPDATE_FROM_EXTERNAL'; // For n8n/Slack follow-up: write ItemUpdate from external source
+  | 'RECORD_UPDATE_FROM_EXTERNAL'
+  | 'UPSERT_PROJECT'
+  | 'DELETE_PROJECT'
+  | 'UPSERT_PROJECT_TASK'
+  | 'DELETE_PROJECT_TASK'
+  | 'UPSERT_PROJECT_MILESTONE'
+  | 'DELETE_PROJECT_MILESTONE'
+  | 'UPSERT_TASK_MILESTONE'
+  | 'DELETE_TASK_MILESTONE';
 
 export interface ActionPayload {
   action: ActionType;
@@ -195,5 +259,9 @@ export interface ActionPayload {
   workableConfig?: WorkableConfig; 
   salesforceConfig?: SalesforceConfig; 
   id?: string;
+  project?: Partial<Project>;
+  projectTask?: Partial<ProjectTask>;
+  projectMilestone?: Partial<ProjectMilestone>;
+  taskMilestone?: Partial<TaskMilestone>;
 }
 

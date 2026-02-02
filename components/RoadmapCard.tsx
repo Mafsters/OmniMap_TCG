@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { RoadmapItem, Priority, Employee, Status } from '../types';
-import { STATUS_COLORS, getDepartmentColor } from '../constants';
+import { getDepartmentColor } from '../constants';
 
 interface RoadmapCardProps {
   item: RoadmapItem;

@@ -20,6 +20,13 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
-      }
+      },
+      test: {
+        globals: true,
+        environment: 'jsdom',
+        include: ['**/*.test.{ts,tsx}'],
+        exclude: ['e2e/**', 'node_modules/**'],
+        setupFiles: ['./vitest.setup.ts'],
+      },
     };
 });

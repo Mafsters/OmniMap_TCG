@@ -1,5 +1,5 @@
 
-import { RoadmapItem, StrategicGoal, Employee, MonthlyUpdate, ActionPayload, ItemUpdate, SalesMetricData, SalesActionItem, HiBobConfig, WorkableConfig, SalesforceConfig } from "../types";
+import { RoadmapItem, StrategicGoal, Employee, MonthlyUpdate, ActionPayload, ItemUpdate, SalesMetricData, SalesActionItem, HiBobConfig, WorkableConfig, SalesforceConfig, Project, ProjectTask, ProjectMilestone, TaskMilestone } from "../types";
 
 /**
  * GOOGLE APPS SCRIPT BACKEND (V7 - SALES MODULE):
@@ -14,9 +14,18 @@ export interface SheetsData {
   itemUpdates?: ItemUpdate[];
   salesData?: SalesMetricData[];
   salesActions?: SalesActionItem[];
+  /** Projects (separate from goals); stored in Projects sheet */
+  projects?: Project[];
+  /** Tasks belonging to projects; stored in ProjectTasks sheet */
+  projectTasks?: ProjectTask[];
+  /** Optional milestones; stored in ProjectMilestones sheet (legacy) */
+  projectMilestones?: ProjectMilestone[];
+  /** Progress milestones per task; stored in TaskMilestones sheet */
+  taskMilestones?: TaskMilestone[];
+  /** Debug info from Apps Script (e.g. sheet structure); not persisted */
+  _salesDebug?: unknown;
 }
 
-/** Item due for follow-up (for n8n / Slack); returned by list_follow_ups API */
 export interface FollowUpItem {
   itemId: string;
   title: string;
@@ -33,7 +42,7 @@ class GoogleSheetsService {
   private scriptUrl: string | null = localStorage.getItem('omnimap_script_url') || DEFAULT_SCRIPT_URL;
 
   setScriptUrl(url: string) {
-    let cleanUrl = url.trim();
+    const cleanUrl = url.trim();
     this.scriptUrl = cleanUrl;
     localStorage.setItem('omnimap_script_url', cleanUrl);
   }
@@ -50,17 +59,17 @@ class GoogleSheetsService {
       const separator = url.includes('?') ? '&' : '?';
       const urlWithCacheBuster = `${url}${separator}t=${Date.now()}`;
       
-      const response = await fetch(urlWithCacheBuster, {
+      const res = await fetch(urlWithCacheBuster, {
         method: 'GET',
         mode: 'cors',
         credentials: 'omit'
       });
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
       }
       
-      const rawData = await response.json();
+      const rawData = await res.json();
       return rawData;
     } catch (error) {
       console.error('Sheets Fetch Error:', error);
@@ -74,9 +83,13 @@ class GoogleSheetsService {
       console.error('[Sheets Dispatch] No script URL configured');
       return false;
     }
-    console.log('[Sheets Dispatch] Sending:', payload.action, payload);
+    if (import.meta.env.DEV) {
+      console.log('[Sheets Dispatch] Sending:', payload.action, payload);
+    } else {
+      console.log('[Sheets Dispatch] Sending:', payload.action);
+    }
     try {
-      const response = await fetch(url, {
+      await fetch(url, {
         method: 'POST',
         mode: 'no-cors',
         body: JSON.stringify(payload),
@@ -129,17 +142,7 @@ class GoogleSheetsService {
     return this.dispatch({ action: 'UPSERT_ITEM_UPDATE', itemUpdate });
   }
 
-  // --- FOLLOW-UP API (for n8n / Slack) ---
-
-  /**
-   * GET items due for follow-up. Requires backend to support action=list_follow_ups.
-   * Used by n8n to know whom to DM on Slack.
-   */
-  async listFollowUps(options: {
-    cadenceDays?: number;
-    goalId?: string;
-    token?: string;
-  } = {}): Promise<FollowUpItem[]> {
+  async listFollowUps(options: { cadenceDays?: number; goalId?: string; token?: string } = {}): Promise<FollowUpItem[]> {
     const url = this.getScriptUrl();
     if (!url) return [];
     const params = new URLSearchParams();
@@ -149,11 +152,7 @@ class GoogleSheetsService {
     if (options.token) params.set('token', options.token);
     const separator = url.includes('?') ? '&' : '?';
     try {
-      const response = await fetch(`${url}${separator}${params.toString()}`, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit'
-      });
+      const response = await fetch(`${url}${separator}${params.toString()}`, { method: 'GET', mode: 'cors', credentials: 'omit' });
       if (!response.ok) return [];
       const data = await response.json();
       return Array.isArray(data.items) ? data.items : [];
@@ -163,18 +162,7 @@ class GoogleSheetsService {
     }
   }
 
-  /**
-   * Record an ItemUpdate from an external source (e.g. Slack reply via n8n).
-   * Backend must support action RECORD_UPDATE_FROM_EXTERNAL with itemUpdate payload.
-   */
-  async recordUpdateFromExternal(payload: {
-    itemId: string;
-    content: string;
-    health: 'green' | 'amber' | 'red';
-    source?: 'app' | 'slack' | 'n8n';
-    month?: string;
-    year?: number;
-  }): Promise<boolean> {
+  async recordUpdateFromExternal(payload: { itemId: string; content: string; health: 'green' | 'amber' | 'red'; source?: 'app' | 'slack' | 'n8n'; month?: string; year?: number }): Promise<boolean> {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const now = new Date();
     const itemUpdate: Partial<ItemUpdate> = {
@@ -186,10 +174,49 @@ class GoogleSheetsService {
       year: payload.year ?? now.getFullYear(),
       updatedAt: new Date().toISOString()
     };
-    return this.dispatch({
-      action: 'RECORD_UPDATE_FROM_EXTERNAL',
-      itemUpdate
-    });
+    return this.dispatch({ action: 'RECORD_UPDATE_FROM_EXTERNAL', itemUpdate });
+  }
+
+  // --- PROJECTS (separate from Goals) ---
+
+  async upsertProject(project: Partial<Project>): Promise<boolean> {
+    return this.dispatch({ action: 'UPSERT_PROJECT', project });
+  }
+
+  async upsertProjectTasks(tasks: Partial<ProjectTask>[]): Promise<boolean> {
+    try {
+      for (const t of tasks) {
+        await this.dispatch({ action: 'UPSERT_PROJECT_TASK', projectTask: t });
+      }
+      return true;
+    } catch (e) {
+      console.error('Batch project tasks upsert error', e);
+      return false;
+    }
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    return this.dispatch({ action: 'DELETE_PROJECT', id });
+  }
+
+  async deleteProjectTask(id: string): Promise<boolean> {
+    return this.dispatch({ action: 'DELETE_PROJECT_TASK', id });
+  }
+
+  async upsertProjectMilestone(milestone: Partial<ProjectMilestone>): Promise<boolean> {
+    return this.dispatch({ action: 'UPSERT_PROJECT_MILESTONE', projectMilestone: milestone });
+  }
+
+  async deleteProjectMilestone(id: string): Promise<boolean> {
+    return this.dispatch({ action: 'DELETE_PROJECT_MILESTONE', id });
+  }
+
+  async upsertTaskMilestone(milestone: Partial<TaskMilestone>): Promise<boolean> {
+    return this.dispatch({ action: 'UPSERT_TASK_MILESTONE', taskMilestone: milestone });
+  }
+
+  async deleteTaskMilestone(id: string): Promise<boolean> {
+    return this.dispatch({ action: 'DELETE_TASK_MILESTONE', id });
   }
 
   async upsertSalesAction(salesAction: Partial<SalesActionItem>): Promise<boolean> {

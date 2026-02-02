@@ -10,7 +10,7 @@ interface MonthlyUpdatesSectionProps {
   onEditUpdate?: (update: MonthlyUpdate) => void;
 }
 
-const MonthlyUpdatesSection: React.FC<MonthlyUpdatesSectionProps> = ({ currentUser, goal, updates, onAddUpdate, onEditUpdate }) => {
+const MonthlyUpdatesSection: React.FC<MonthlyUpdatesSectionProps> = ({ currentUser, goal: _goal, updates, onAddUpdate, onEditUpdate }) => {
   const [filter, setFilter] = useState<HealthStatus | 'all'>('all');
 
   const filteredUpdates = updates

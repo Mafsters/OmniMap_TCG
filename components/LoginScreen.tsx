@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Employee, GoogleUser } from '../types';
 import { authService } from '../services/authService';
+import { getAiEnabled, setAiEnabled } from '../utils/aiPrefs';
 
 interface LoginScreenProps {
   employees: Employee[];
@@ -21,6 +22,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ employees, onLogin, onAuthErr
   const [showDevLogin, setShowDevLogin] = useState(false);
   const [devCodeValidated, setDevCodeValidated] = useState(false);
   const [devSearchTerm, setDevSearchTerm] = useState('');
+  const [aiEnabled, setAiEnabledState] = useState(() => getAiEnabled());
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoaded(true), 100);
@@ -213,6 +215,26 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ employees, onLogin, onAuthErr
             </div>
           ) : (
             <div className="flex flex-col items-center space-y-6">
+              {/* AI features toggle – default OFF to avoid API costs during testing */}
+              <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aiEnabled}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setAiEnabledState(checked);
+                      setAiEnabled(checked);
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Enable AI features</span>
+                </label>
+                <p className="text-xs text-slate-500 mt-2 ml-7">
+                  AI suggestions and insights use the Gemini API and may incur costs. Leave off while testing.
+                </p>
+              </div>
+
               <div 
                 id="google-signin-button" 
                 ref={buttonRef}

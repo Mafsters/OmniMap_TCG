@@ -15,14 +15,14 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidt
 
   useEffect(() => {
     if (isOpen) {
-      setIsVisible(true);
       requestAnimationFrame(() => {
+        setIsVisible(true);
         requestAnimationFrame(() => {
           setIsAnimating(true);
         });
       });
     } else {
-      setIsAnimating(false);
+      requestAnimationFrame(() => setIsAnimating(false));
       const timer = setTimeout(() => setIsVisible(false), 200);
       return () => clearTimeout(timer);
     }

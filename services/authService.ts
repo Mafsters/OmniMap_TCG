@@ -133,7 +133,7 @@ class AuthService {
   /**
    * Save authentication session
    */
-  private saveSession(googleUser: GoogleUser, credential: string): void {
+  private saveSession(googleUser: GoogleUser, _credential: string): void {
     try {
       sessionStorage.setItem(USER_KEY, JSON.stringify(googleUser));
       // Store minimal session info (not the full token for security)

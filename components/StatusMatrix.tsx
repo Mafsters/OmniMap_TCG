@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { StrategicGoal, MonthlyUpdate, HealthStatus } from '../types';
+import { StrategicGoal, MonthlyUpdate } from '../types';
 import { HEALTH_STYLES } from '../constants';
 
 interface StatusMatrixProps {

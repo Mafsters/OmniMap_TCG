@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { RoadmapItem, ItemUpdate, Employee, HealthStatus, StrategicGoal } from '../types';
-import { HEALTH_STYLES, getDepartmentColor } from '../constants';
+import { HEALTH_STYLES } from '../constants';
 
 interface MonthlyUpdatesViewProps {
   items: RoadmapItem[];
@@ -137,11 +137,6 @@ const MonthlyUpdatesView: React.FC<MonthlyUpdatesViewProps> = ({
     return groups;
   }, [items]);
 
-  // Get unique departments from items
-  const departments = useMemo(() => {
-    return Array.from(new Set(items.map(i => i.department || 'Unassigned'))).sort();
-  }, [items]);
-
   // Timeline view - recent updates sorted by date
   const recentUpdates = useMemo(() => {
     return updates
@@ -150,16 +145,11 @@ const MonthlyUpdatesView: React.FC<MonthlyUpdatesViewProps> = ({
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [updates, selectedMonth, selectedYear, healthFilter]);
 
-  const getHealthStyle = (health?: HealthStatus) => {
-    if (!health) return { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-300', label: 'Pending' };
+  const getHealthStyle = (health?: HealthStatus): { color: string; text: string; border: string; label: string } => {
+    if (!health) return { color: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-300', label: 'Pending' };
     const style = HEALTH_STYLES[health];
-    return style || { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-300', label: 'Unknown' };
-  };
-
-  const getGoalTitle = (goalId?: string) => {
-    if (!goalId) return 'Unassigned';
-    const goal = goals.find(g => g.id === goalId);
-    return goal?.title || 'Unknown Goal';
+    const fallback = { color: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-300', label: 'Unknown' };
+    return style ? { ...style, color: style.color } : fallback;
   };
 
   // Item card component for update status
@@ -211,87 +201,6 @@ const MonthlyUpdatesView: React.FC<MonthlyUpdatesViewProps> = ({
             </svg>
             Add update for {selectedMonth}
           </button>
-        )}
-      </div>
-    );
-  };
-
-  // Employee row with their items
-  const EmployeeUpdateRow = ({ employee }: { employee: Employee }) => {
-    const empItems = items.filter(i => i.owner === employee.name);
-    if (empItems.length === 0) return null;
-    
-    const isExpanded = expandedEmployees.has(employee.id);
-    const empUpdates = empItems.map(item => ({ item, update: getItemUpdate(item.id) }));
-    const withUpdate = empUpdates.filter(e => e.update).length;
-    const missing = empUpdates.filter(e => !e.update).length;
-    const hasRed = empUpdates.some(e => e.update?.health === HealthStatus.RED);
-    const hasAmber = empUpdates.some(e => e.update?.health === HealthStatus.AMBER);
-    
-    return (
-      <div className="border-b border-slate-100 last:border-b-0">
-        <div 
-          onClick={() => toggleEmployee(employee.id)}
-          className={`
-            flex items-center gap-4 p-4 cursor-pointer transition-all
-            ${isExpanded ? 'bg-slate-100' : 'hover:bg-slate-100'}
-          `}
-        >
-          <button className="p-1 hover:bg-slate-200 rounded transition-colors">
-            <svg className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-          
-          <img 
-            src={employee.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(employee.name)}&background=random&color=fff`}
-            className="w-9 h-9 rounded-lg object-cover border border-slate-300"
-            alt={employee.name}
-          />
-          
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-slate-800 text-sm">{employee.name}</div>
-            <div className="text-xs text-slate-500">{empItems.length} goals</div>
-          </div>
-          
-          {/* Status indicators */}
-          <div className="flex items-center gap-2">
-            {hasRed && (
-              <span className="flex items-center gap-1 px-2 py-1 bg-red-50 rounded-lg">
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-xs font-medium text-red-600">At risk</span>
-              </span>
-            )}
-            {hasAmber && !hasRed && (
-              <span className="flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-lg">
-                <div className="w-2 h-2 rounded-full bg-amber-500" />
-                <span className="text-xs font-medium text-amber-600">Watch</span>
-              </span>
-            )}
-            {missing > 0 && (
-              <span className="flex items-center gap-1 px-2 py-1 bg-slate-100 rounded-lg">
-                <span className="text-xs font-medium text-slate-500">{missing} missing</span>
-              </span>
-            )}
-            {withUpdate === empItems.length && withUpdate > 0 && (
-              <span className="flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg">
-                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="text-xs font-medium text-emerald-600">Complete</span>
-              </span>
-            )}
-          </div>
-        </div>
-        
-        {isExpanded && (
-          <div className="px-4 pb-4 pl-16">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {empItems.map(item => (
-                <UpdateItemCard key={item.id} item={item} />
-              ))}
-            </div>
-          </div>
         )}
       </div>
     );

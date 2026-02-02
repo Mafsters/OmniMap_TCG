@@ -1,5 +1,5 @@
 
-import { RoadmapItem, Status, Priority, StrategicGoal, HealthStatus } from './types';
+import { RoadmapItem, Status, StrategicGoal, HealthStatus } from './types';
 
 export const GOAL_STYLES = [
   { color: 'bg-blue-900', icon: '🌍' },      // EU Growth - dark blue
@@ -16,6 +16,13 @@ export const HEALTH_STYLES = {
   [HealthStatus.AMBER]: { color: 'bg-amber-500', text: 'text-amber-500', border: 'border-amber-200', label: 'At Risk' },
   [HealthStatus.RED]: { color: 'bg-rose-500', text: 'text-rose-500', border: 'border-rose-200', label: 'Blocked' },
 };
+
+/** Shared form CSS classes for labels, inputs, and selects */
+export const FORM_CLASSES = {
+  labelClass: 'text-xs font-medium text-slate-600 block mb-1.5',
+  inputClass: 'w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none text-slate-900 text-sm transition-colors',
+  selectClass: 'w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none text-slate-900 text-sm transition-colors',
+} as const;
 
 export const getGoalStyle = (index: number, title: string): { color: string, icon: string } => {
   const t = title.toLowerCase();

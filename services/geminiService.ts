@@ -142,18 +142,12 @@ export const generateRoadmapItem = async (userInput: string): Promise<Partial<Ro
   }
 };
 
-/** Suggested goal from an objective; optionally matches an existing goal by id */
 export interface SuggestGoalResult {
   goalTitle: string;
   goalDescription: string;
-  /** If the objective clearly matches an existing goal, its id; otherwise omit */
   matchedGoalId?: string;
 }
 
-/**
- * Suggests a StrategicGoal (title + description) from a free-text objective,
- * and optionally indicates if it matches an existing goal.
- */
 export const suggestGoalFromObjective = async (
   objective: string,
   existingGoals: StrategicGoal[]
@@ -161,18 +155,13 @@ export const suggestGoalFromObjective = async (
   const goalsContext = existingGoals.length
     ? existingGoals.map(g => `id: ${g.id}, title: "${g.title}"`).join('\n')
     : 'No existing goals.';
-
   const prompt = `You are a program manager. The user stated this objective: "${objective}"
-
 Existing goals (id and title only):
 ${goalsContext}
-
 Tasks:
-1. Propose a short goal title (e.g. "Launch Merch Store") and a 1-2 sentence goal description.
-2. If this objective clearly refers to ONE of the existing goals above, set matchedGoalId to that goal's id exactly. Otherwise omit matchedGoalId.
-
+1. Propose a short goal title and a 1-2 sentence goal description.
+2. If this objective clearly refers to ONE existing goal above, set matchedGoalId to that goal's id. Otherwise omit matchedGoalId.
 Return JSON: { "goalTitle": string, "goalDescription": string, "matchedGoalId": string or omit }`;
-
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -196,13 +185,12 @@ Return JSON: { "goalTitle": string, "goalDescription": string, "matchedGoalId": 
       goalDescription: parsed.goalDescription || '',
       matchedGoalId: parsed.matchedGoalId || undefined
     };
-  } catch (error: any) {
-    console.error("suggestGoalFromObjective failed:", error);
+  } catch (e: any) {
+    console.error("suggestGoalFromObjective failed:", e);
     return { goalTitle: objective.slice(0, 50), goalDescription: objective, matchedGoalId: undefined };
   }
 };
 
-/** Result of breaking down an objective into a goal + tasks with suggested owners */
 export interface BreakDownResult {
   goalId?: string;
   goalTitle?: string;
@@ -210,12 +198,9 @@ export interface BreakDownResult {
   tasks: Partial<RoadmapItem>[];
 }
 
-/**
- * Breaks down an objective into a suggested goal (if new) and multiple RoadmapItem-like tasks,
- * with suggested owner names from the given employee list (role/department/team).
- */
 export const breakDownObjective = async (
-  objective: string,
+  projectTitle: string,
+  projectDescription: string,
   existingGoals: StrategicGoal[],
   employees: Employee[]
 ): Promise<BreakDownResult> => {
@@ -223,27 +208,18 @@ export const breakDownObjective = async (
     ? existingGoals.map(g => `id: ${g.id}, title: "${g.title}"`).join('\n')
     : 'No existing goals.';
   const peopleContext = employees.length
-    ? employees.map(e => `name: "${e.name}", department: ${e.department}, role: ${e.role}${e.team ? `, team: ${e.team}` : ''}`).join('\n')
+    ? employees.map(e => {
+        const base = `name: "${e.name}", department: ${e.department}, role: ${e.role}`;
+        const extra = [e.team && `team: ${e.team}`, e.responsibilities && `what they do: ${e.responsibilities}`].filter(Boolean).join(', ');
+        return extra ? `${base}, ${extra}` : base;
+      }).join('\n')
     : 'No employees listed.';
-
-  const prompt = `You are a program manager. Break the following objective into a single goal and concrete tasks with owners.
-
-Objective: "${objective}"
-
-Existing goals (use one of these if the objective fits; otherwise suggest a new goal):
-${goalsContext}
-
-People (use exact "name" as owner for each task; pick the best fit by department/role):
-${peopleContext}
-
-Return JSON with:
-- goalId: use an existing goal id if this objective fits one, otherwise omit.
-- goalTitle: short goal title (if new goal).
-- goalDescription: 1-2 sentences (if new goal).
-- tasks: array of objects. Each object must have: title, description, department, owner (exact name from People list), priority (one of: Low, Medium, High, Critical). Optionally: team (string).
-
-If no employees exist, set owner to "Unassigned" for each task.`;
-
+  const prompt = `You are a program manager. Break this project into concrete tasks and assign owners from the team list. Use each person's role and "what they do" to pick the best owner for each task; not everyone in a department does the same job.
+Project title: "${projectTitle}"
+Project description: "${projectDescription}"
+Existing goals (optional context): ${goalsContext}
+Team (use exact "name" as owner): ${peopleContext}
+Return JSON: goalId (optional), goalTitle, goalDescription (if relevant), tasks: array of { title, description, department, owner (exact name from list), priority (Low/Medium/High/Critical), team? }. If no employees or no good fit, set owner to "Unassigned".`;
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -293,8 +269,8 @@ If no employees exist, set owner to "Unassigned" for each task.`;
       goalDescription: parsed.goalDescription,
       tasks
     };
-  } catch (error: any) {
-    console.error("breakDownObjective failed:", error);
+  } catch (e: any) {
+    console.error("breakDownObjective failed:", e);
     return { tasks: [] };
   }
 };

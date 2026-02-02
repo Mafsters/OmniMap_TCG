@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { RoadmapItem, StrategicGoal, Employee, Status, Priority, GoalType, GoalCategory } from '../types';
+import { FORM_CLASSES } from '../constants';
 
 interface ItemFormProps {
   item?: Partial<RoadmapItem>;
@@ -12,7 +13,7 @@ interface ItemFormProps {
   onCancel: () => void;
 }
 
-const ItemForm: React.FC<ItemFormProps> = ({ item, goals, employees, departments, onSave, onDelete, onCancel }) => {
+const ItemForm: React.FC<ItemFormProps> = ({ item, goals, employees, departments, onSave, onCancel }) => {
   const [formData, setFormData] = useState<Partial<RoadmapItem>>({
     title: '',
     description: '',
@@ -54,10 +55,11 @@ const ItemForm: React.FC<ItemFormProps> = ({ item, goals, employees, departments
       const currentOwnerExists = filteredOwners.some(e => e.name === formData.owner || e.id === formData.owner);
       if (!currentOwnerExists) {
         const defaultOwner = filteredOwners.find(e => e.isHoD) || filteredOwners[0];
-        setFormData(prev => ({ ...prev, owner: defaultOwner.name }));
+        const name = defaultOwner?.name ?? '';
+        queueMicrotask(() => setFormData(prev => ({ ...prev, owner: name })));
       }
     } else {
-      setFormData(prev => ({ ...prev, owner: '' }));
+      queueMicrotask(() => setFormData(prev => ({ ...prev, owner: '' })));
     }
   }, [formData.department, filteredOwners]);
 
@@ -66,9 +68,7 @@ const ItemForm: React.FC<ItemFormProps> = ({ item, goals, employees, departments
     onSave(formData);
   };
 
-  const labelClass = "text-xs font-medium text-slate-600 block mb-1.5";
-  const inputClass = "w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none text-slate-900 text-sm transition-colors";
-  const selectClass = "w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none text-slate-900 text-sm transition-colors";
+  const { labelClass, inputClass, selectClass } = FORM_CLASSES;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">

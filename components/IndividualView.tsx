@@ -1,6 +1,6 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { StrategicGoal, RoadmapItem, Employee, Priority, Status } from '../types';
+import React, { useMemo, useState } from 'react';
+import { StrategicGoal, RoadmapItem, Employee, Status } from '../types';
 import RoadmapCard from './RoadmapCard';
 
 interface IndividualViewProps {
@@ -225,7 +225,7 @@ const TeamMemberNode: React.FC<TeamMemberNodeProps> = ({
     visited.add(emp.id);
     
     const empItems = getEmployeeItems(emp);
-    let totals = {
+    const totals = {
       blocked: empItems.filter(i => i.status === Status.BLOCKED).length,
       active: empItems.filter(i => i.status === Status.IN_PROGRESS).length,
       done: empItems.filter(i => i.status === Status.DONE).length,

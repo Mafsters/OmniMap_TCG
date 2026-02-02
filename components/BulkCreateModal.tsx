@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Employee, RoadmapItem, StrategicGoal, Status, Priority, HiBobConfig, GoalType, GoalCategory } from '../types';
 import Modal from './Modal';
 
@@ -18,20 +18,23 @@ const BulkCreateModal: React.FC<BulkCreateModalProps> = ({ isOpen, onClose, empl
   const [error, setError] = useState<string | null>(null);
   const [syncToHiBob, setSyncToHiBob] = useState(false);
   
-  // HiBob Credentials State
-  const [hibobCreds, setHibobCreds] = useState<HiBobConfig>({ serviceId: '', token: '' });
-  const [showCreds, setShowCreds] = useState(false); // Controls visibility of inputs
-
-  // Check for credentials on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('omnimap_hibob_config');
-    if (saved) {
-        setHibobCreds(JSON.parse(saved));
-        setShowCreds(false);
-    } else {
-        setShowCreds(true);
+  // HiBob Credentials State — initialize from localStorage (avoid setState in effect)
+  const [hibobCreds, setHibobCreds] = useState<HiBobConfig>(() => {
+    try {
+      const saved = localStorage.getItem('omnimap_hibob_config');
+      if (saved) return JSON.parse(saved) as HiBobConfig;
+    } catch {
+      // ignore
     }
-  }, [isOpen]);
+    return { serviceId: '', token: '' };
+  });
+  const [showCreds, setShowCreds] = useState(() => {
+    try {
+      return !localStorage.getItem('omnimap_hibob_config');
+    } catch {
+      return true;
+    }
+  });
 
   const handleCredsChange = (field: keyof HiBobConfig, value: string) => {
       const newCreds = { ...hibobCreds, [field]: value };
@@ -282,7 +285,7 @@ const BulkCreateModal: React.FC<BulkCreateModalProps> = ({ isOpen, onClose, empl
                             <label className="text-[9px] font-bold text-slate-500 uppercase block mb-1">
                                 Goal Type ID 
                                 <span className="text-rose-500 ml-1">*</span>
-                                <span className="text-[8px] text-slate-500 font-normal normal-case ml-1">(Use HiBob Test → "Read Goals API" to find)</span>
+                                <span className="text-[8px] text-slate-500 font-normal normal-case ml-1">(Use HiBob Test → &quot;Read Goals API&quot; to find)</span>
                             </label>
                             <input 
                                 type="text" 

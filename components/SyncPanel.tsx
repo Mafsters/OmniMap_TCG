@@ -15,7 +15,7 @@ interface SyncPanelProps {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const SyncPanel: React.FC<SyncPanelProps> = ({ onSync, onJiraSync, isSyncing, lastSync, globalPeriod, onPeriodChange }) => {
+const SyncPanel: React.FC<SyncPanelProps> = ({ onSync, onJiraSync: _onJiraSync, isSyncing, lastSync, globalPeriod, onPeriodChange }) => {
   const [url, setUrl] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -24,8 +24,6 @@ const SyncPanel: React.FC<SyncPanelProps> = ({ onSync, onJiraSync, isSyncing, la
   
   // Modal States
   const [isHiBobOpen, setIsHiBobOpen] = useState(false);
-  const [isWorkableOpen, setIsWorkableOpen] = useState(false);
-  const [isSalesforceOpen, setIsSalesforceOpen] = useState(false);
   
   const [debugData, setDebugData] = useState<SheetsData | null>(null);
   const [loadingDebug, setLoadingDebug] = useState(false);
@@ -33,20 +31,19 @@ const SyncPanel: React.FC<SyncPanelProps> = ({ onSync, onJiraSync, isSyncing, la
   // HiBob Config State
   const [hiBobConfig, setHiBobConfig] = useState<HiBobConfig>({ serviceId: '', token: '' });
   const [hiBobStatus, setHiBobStatus] = useState<string | null>(null);
-  const [testEmail, setTestEmail] = useState('');
-  const [customFieldId, setCustomFieldId] = useState(''); 
+  const [testEmail, setTestEmail] = useState(''); 
   const [testGoalId, setTestGoalId] = useState(''); // For TEST_GET_GOAL
-  const [testResult, setTestResult] = useState<any>(null);
+  const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
   const [testingHiBob, setTestingHiBob] = useState(false);
   const [manualGoalType, setManualGoalType] = useState(''); // New: Manual Override
 
   // Workable Config State
   const [workableConfig, setWorkableConfig] = useState<WorkableConfig>({ subdomain: '', token: '' });
-  const [workableStatus, setWorkableStatus] = useState<string | null>(null);
+  const [_workableStatus, setWorkableStatus] = useState<string | null>(null);
 
   // Salesforce Config State
   const [sfConfig, setSfConfig] = useState<SalesforceConfig>({ instanceUrl: '', clientId: '', clientSecret: '', refreshToken: '' });
-  const [sfStatus, setSfStatus] = useState<string | null>(null);
+  const [_sfStatus, setSfStatus] = useState<string | null>(null);
 
   // Initialize and sync URL state when menu opens
   useEffect(() => {
@@ -193,7 +190,7 @@ const SyncPanel: React.FC<SyncPanelProps> = ({ onSync, onJiraSync, isSyncing, la
     }
   };
 
-  var scriptCode = `/**
+  const scriptCode = `/**
  * OmniMap Backend Script v7.65 (DEBUG LOGGING)
  * FIXED: Removed all ?. optional chaining for older Google Apps Script compatibility
  * FEATURE: PUSH_SINGLE_GOAL now accepts direct item parameters (p_title, p_owner etc)
@@ -1731,6 +1728,10 @@ function doGet(e) {
       var salesActionsRaw = getSheetData(['SalesActions', 'Sales Actions']);
       var targetsRaw = getSheetData(['SalesTargets', 'Sales Targets', 'SalesData']); 
       var actualsRaw = getSheetData(['SalesActuals', 'Sales Actuals']);
+      var projectsRaw = getSheetData(['Projects']);
+      var projectTasksRaw = getSheetData(['ProjectTasks']);
+      var projectMilestonesRaw = getSheetData(['ProjectMilestones', 'Project Milestones']);
+      var taskMilestonesRaw = getSheetData(['TaskMilestones', 'Task Milestones']);
       
       // Debug: Log the header row to understand column structure
       Logger.log('SalesTargets Headers: ' + JSON.stringify(targetsRaw[0]));
@@ -1810,6 +1811,7 @@ function doGet(e) {
             department: e[4 + offset], 
             team: e[5 + offset], 
             role: e[6 + offset] || "",
+            responsibilities: e[11 + offset] ? String(e[11 + offset]).trim() : undefined,
             reportsTo: e[9 + offset] ? String(e[9 + offset]).trim() : "",
             salesPerformanceAccess: salesAccessVal ? String(salesAccessVal).split(',').map(function(s) { return s.trim(); }) : [],
             avatarUrl: "https://ui-avatars.com/api/?name=" + encodeURIComponent(fName) + "&background=random&color=fff",
@@ -1848,7 +1850,7 @@ function doGet(e) {
           
           function parseVal(val, isPercentMetric) {
              if (val === undefined || val === null || val === '') return 0;
-             var s = String(val).trim().replace(/,/g, '').replace(/[^0-9.%\-]/g, '');
+             var s = String(val).trim().replace(/,/g, '').replace(/[^0-9.%-]/g, '');
              if (!s || s === '-') return 0;
              var num = parseFloat(s.replace('%', '')) || 0;
              // For percentage metrics (Sales Rate, Conversion):
@@ -1895,6 +1897,20 @@ function doGet(e) {
         }) : [],
         salesActions: salesActionsRaw.length > 1 ? salesActionsRaw.slice(1).map(function(s) { return {
           id: s[0], employeeId: s[1], metricType: s[2], description: s[3], assignedBy: s[4], dueDate: safeDate(s[5]), isCompleted: s[6] === true, createdAt: s[7]
+        }; }) : [],
+        projects: projectsRaw.length > 1 ? projectsRaw.slice(1).map(function(p) { return {
+          id: p[0].toString(), title: p[1], description: p[2] || '', owner: p[3] || '', status: p[4] || 'Not Started', priority: p[5] || 'Medium',
+          startDate: safeDate(p[6]), endDate: safeDate(p[7]), createdAt: p[8] ? String(p[8]) : undefined, department: p[9], team: p[10]
+        }; }) : [],
+        projectTasks: projectTasksRaw.length > 1 ? projectTasksRaw.slice(1).map(function(t) { return {
+          id: t[0].toString(), projectId: t[1].toString(), title: t[2], description: t[3] || '', owner: t[4] || '', status: t[5] || 'Not Started', priority: t[6] || 'Medium',
+          startDate: safeDate(t[7]), endDate: safeDate(t[8]), order: t[9] != null ? Number(t[9]) : undefined, createdAt: t[10] ? String(t[10]) : undefined, department: t[11], team: t[12]
+        }; }) : [],
+        projectMilestones: projectMilestonesRaw.length > 1 ? projectMilestonesRaw.slice(1).map(function(m) { return {
+          id: m[0].toString(), projectId: m[1].toString(), title: m[2], dueDate: safeDate(m[3]), completed: m[4] === true, completedAt: m[5] ? String(m[5]) : undefined
+        }; }) : [],
+        taskMilestones: taskMilestonesRaw.length > 1 ? taskMilestonesRaw.slice(1).map(function(m) { return {
+          id: m[0].toString(), taskId: m[1].toString(), title: m[2], dueDate: safeDate(m[3]), completed: m[4] === true, completedAt: m[5] ? String(m[5]) : undefined
         }; }) : [],
         _salesDebug: salesDebugInfo
       };
@@ -1961,6 +1977,62 @@ function doPost(e) {
         return ContentService.createTextOutput("Bulk Push Executed").setMimeType(ContentService.MimeType.TEXT);
     }
 
+    if (action === 'UPSERT_PROJECT') {
+        var sheet = getSheet(['Projects'], ['ID','Title','Description','Owner','Status','Priority','StartDate','EndDate','CreatedAt','Department','Team']);
+        var p = payload.project;
+        upsertRow(sheet, p, [p.id, p.title, p.description || '', p.owner || '', p.status || 'Not Started', p.priority || 'Medium', p.startDate || '', p.endDate || '', p.createdAt || '', p.department || '', p.team || '']);
+    }
+
+    if (action === 'UPSERT_PROJECT_TASK') {
+        var sheet = getSheet(['ProjectTasks'], ['ID','ProjectID','Title','Description','Owner','Status','Priority','StartDate','EndDate','Order','CreatedAt','Department','Team']);
+        var t = payload.projectTask;
+        upsertRow(sheet, t, [t.id, t.projectId, t.title, t.description || '', t.owner || '', t.status || 'Not Started', t.priority || 'Medium', t.startDate || '', t.endDate || '', t.order != null ? t.order : '', t.createdAt || '', t.department || '', t.team || '']);
+    }
+
+    if (action === 'DELETE_PROJECT') {
+        var sheet = ss.getSheetByName('Projects');
+        if (sheet) deleteRowById(sheet, payload.id);
+    }
+
+    if (action === 'DELETE_PROJECT_TASK') {
+        var sheet = ss.getSheetByName('ProjectTasks');
+        if (sheet) deleteRowById(sheet, payload.id);
+    }
+
+    if (action === 'UPSERT_PROJECT_MILESTONE') {
+        var m = payload.projectMilestone;
+        if (!m || !m.id || !m.projectId) {
+          Logger.log('UPSERT_PROJECT_MILESTONE missing payload.projectMilestone or id/projectId: ' + JSON.stringify(payload));
+          return ContentService.createTextOutput(JSON.stringify({ error: 'UPSERT_PROJECT_MILESTONE requires payload.projectMilestone with id and projectId' })).setMimeType(ContentService.MimeType.TEXT);
+        }
+        var sheet = getSheet(['ProjectMilestones', 'Project Milestones'], ['ID','ProjectID','Title','DueDate','Completed','CompletedAt']);
+        var row = [m.id, m.projectId, m.title || '', m.dueDate || '', m.completed === true, m.completedAt || ''];
+        upsertRow(sheet, m, row);
+        Logger.log('UPSERT_PROJECT_MILESTONE ok: ' + m.id);
+    }
+
+    if (action === 'DELETE_PROJECT_MILESTONE') {
+        var sheet = ss.getSheetByName('ProjectMilestones') || ss.getSheetByName('Project Milestones');
+        if (sheet) deleteRowById(sheet, payload.id);
+    }
+
+    if (action === 'UPSERT_TASK_MILESTONE') {
+        var m = payload.taskMilestone;
+        if (!m || !m.id || !m.taskId) {
+          Logger.log('UPSERT_TASK_MILESTONE missing payload.taskMilestone or id/taskId: ' + JSON.stringify(payload));
+          return ContentService.createTextOutput(JSON.stringify({ error: 'UPSERT_TASK_MILESTONE requires payload.taskMilestone with id and taskId' })).setMimeType(ContentService.MimeType.TEXT);
+        }
+        var sheet = getSheet(['TaskMilestones', 'Task Milestones'], ['ID','TaskID','Title','DueDate','Completed','CompletedAt']);
+        var row = [m.id, m.taskId, m.title || '', m.dueDate || '', m.completed === true, m.completedAt || ''];
+        upsertRow(sheet, m, row);
+        Logger.log('UPSERT_TASK_MILESTONE ok: ' + m.id);
+    }
+
+    if (action === 'DELETE_TASK_MILESTONE') {
+        var sheet = ss.getSheetByName('TaskMilestones') || ss.getSheetByName('Task Milestones');
+        if (sheet) deleteRowById(sheet, payload.id);
+    }
+
     return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
   } catch(err) {
     return ContentService.createTextOutput("Error: " + err.toString()).setMimeType(ContentService.MimeType.TEXT);
@@ -1978,6 +2050,16 @@ function upsertRow(sheet, dataObj, values) {
   else sheet.appendRow(values);
 }
 
+function deleteRowById(sheet, id) {
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] == id) {
+      sheet.deleteRow(i + 1);
+      return;
+    }
+  }
+}
+
 function _authorize() {
   UrlFetchApp.fetch("https://www.google.com");
   SpreadsheetApp.getActiveSpreadsheet();
@@ -1985,7 +2067,7 @@ function _authorize() {
 `;
 
   return (
-    <div className="relative z-50">
+    <div className="relative z-50" data-sync-handlers={[handleHiBobSync, handleWorkableSync, handleSalesforceSync] as unknown as string}>
       <div className="flex items-center gap-2 bg-white border border-slate-300 pl-3 pr-1.5 py-1 rounded-xl shadow-sm hover:shadow-md transition-all hover:border-slate-300">
         <div className="flex items-center gap-1.5">
             <div className={`w-1.5 h-1.5 rounded-full ${sheetsService.getScriptUrl() ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
@@ -2330,15 +2412,15 @@ function _authorize() {
               <li>Go to <strong className="text-slate-800">Extensions &gt; Apps Script</strong>.</li>
               <li>Paste the script below (replacing everything).</li>
               <li>
-                 <span className="text-teal-600 font-bold">IMPORTANT:</span> Select <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">_authorize</code> from the dropdown menu up top and click <strong className="text-slate-800">Run</strong>. Review and grant permissions (especially 'External Service').
+                 <span className="text-teal-600 font-bold">IMPORTANT:</span> Select <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">_authorize</code> from the dropdown menu up top and click <strong className="text-slate-800">Run</strong>. Review and grant permissions (especially &apos;External Service&apos;).
               </li>
               <li>Click <strong className="text-slate-800">Deploy &gt; New Deployment</strong>.</li>
-              <li>Select type "Web app".</li>
-              <li>Set "Who has access" to "Anyone".</li>
-              <li>Click "Deploy" and copy the <strong className="text-slate-800">Web App URL</strong>.</li>
+              <li>Select type &quot;Web app&quot;.</li>
+              <li>Set &quot;Who has access&quot; to &quot;Anyone&quot;.</li>
+              <li>Click &quot;Deploy&quot; and copy the <strong className="text-slate-800">Web App URL</strong>.</li>
             </ol>
             <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-4">
-                <p className="text-[10px] font-semibold text-amber-700">Important: You must re-deploy as "New Version" every time you update this script code!</p>
+                <p className="text-[10px] font-semibold text-amber-700">Important: You must re-deploy as &quot;New Version&quot; every time you update this script code!</p>
             </div>
           </div>
           <div className="bg-slate-100 p-4 rounded-xl relative border border-slate-300">

@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RoadmapItem, Status, AIInsight, StrategicGoal, Employee, Priority, MonthlyUpdate, ItemUpdate, AccessLevel, SalesMetricData, SalesActionItem } from './types';
+import { RoadmapItem, AIInsight, StrategicGoal, Employee, MonthlyUpdate, ItemUpdate, SalesMetricData, SalesActionItem, Project, ProjectTask, ProjectMilestone, TaskMilestone } from './types';
 import { INITIAL_ITEMS, BIG_ROCKS, getGoalStyle } from './constants';
-import RoadmapCard from './components/RoadmapCard';
 import UnifiedTimeline from './components/UnifiedTimeline';
 import AlignmentView from './components/AlignmentView';
 import IndividualView from './components/IndividualView';
@@ -22,7 +21,8 @@ import UserProfileModal from './components/UserProfileModal';
 import BulkCreateModal from './components/BulkCreateModal';
 import NewProjectModal from './components/NewProjectModal';
 import ProjectManagerView from './components/ProjectManagerView';
-import { analyzeRoadmap, generateRoadmapItem } from './services/geminiService';
+import { analyzeRoadmap } from './services/geminiService';
+import { getAiEnabled } from './utils/aiPrefs';
 import { sheetsService } from './services/googleSheetsService';
 import { JiraConfig, fetchJiraIssues, mapJiraToRoadmap } from './services/jiraService';
 import { authService } from './services/authService';
@@ -42,7 +42,9 @@ const loadSavedPeriod = () => {
       const parsed = JSON.parse(saved);
       if (parsed.month && parsed.year) return parsed;
     }
-  } catch (e) {}
+  } catch {
+    // ignore parse errors
+  }
   return getCurrentPeriod();
 };
 
@@ -55,6 +57,10 @@ const App: React.FC = () => {
   const [itemUpdates, setItemUpdates] = useState<ItemUpdate[]>([]);
   const [salesData, setSalesData] = useState<SalesMetricData[]>([]);
   const [salesActions, setSalesActions] = useState<SalesActionItem[]>([]); 
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectTasks, setProjectTasks] = useState<ProjectTask[]>([]);
+  const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
+  const [taskMilestones, setTaskMilestones] = useState<TaskMilestone[]>([]);
   
   const [view, setView] = useState<'alignment' | 'individual' | 'updates' | 'timeline' | 'sales' | 'projectmanager'>('alignment');
   
@@ -69,7 +75,7 @@ const App: React.FC = () => {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [_syncError, setSyncError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [pushingItems, setPushingItems] = useState<Set<string>>(new Set());
 
@@ -125,9 +131,9 @@ const App: React.FC = () => {
   const rbacFilteredItems = useMemo(() => {
     if (!currentUser || currentUser.accessLevel === 'Admin') return items;
     // Fuzzy matching: If allowed owner is "Federico Rossi", they should see items for "Federico"
-    return items.filter(i => {
+    return items.filter((i: RoadmapItem) => {
        const owner = i.owner.toLowerCase().trim();
-       return allowedOwners.some(allowed => {
+       return allowedOwners.some((allowed: string) => {
           const a = allowed.toLowerCase().trim();
           return a === owner || a.includes(owner) || owner.includes(a);
        });
@@ -136,8 +142,8 @@ const App: React.FC = () => {
 
   const rbacFilteredEmployees = useMemo(() => {
     if (!currentUser || currentUser.accessLevel === 'Admin') return employees;
-    return employees.filter(e => 
-        allowedOwners.some(allowed => {
+    return employees.filter((e: Employee) =>
+        allowedOwners.some((allowed: string) => {
             const a = allowed.toLowerCase().trim();
             const name = e.name.toLowerCase().trim();
             return a === e.id || a === name || a.includes(name) || name.includes(a);
@@ -150,12 +156,12 @@ const App: React.FC = () => {
     if (currentUser.accessLevel === 'Admin') return employees;
     
     if (currentUser.salesPerformanceAccess && currentUser.salesPerformanceAccess.length > 0) {
-      if (currentUser.salesPerformanceAccess.some(a => a.toLowerCase() === 'all')) {
-         return employees.filter(e => e.department.toLowerCase().includes('sales'));
+      if (currentUser.salesPerformanceAccess.some((a: string) => a.toLowerCase() === 'all')) {
+         return employees.filter((e: Employee) => e.department.toLowerCase().includes('sales'));
       }
-      return employees.filter(e => {
+      return employees.filter((e: Employee) => {
          if (!e.team) return false;
-         return currentUser.salesPerformanceAccess?.some(region => 
+         return currentUser.salesPerformanceAccess?.some((region: string) =>
            e.team?.toLowerCase().includes(region.toLowerCase())
          );
       });
@@ -179,7 +185,7 @@ const App: React.FC = () => {
 
   const uniqueDepts = useMemo(() => {
     const depts = new Set<string>();
-    employees.forEach(e => depts.add(e.department));
+    employees.forEach((e: Employee) => depts.add(e.department));
     if (depts.size === 0) ['Product', 'Marketing', 'Operations', 'Sales', 'Tech'].forEach(d => depts.add(d));
     return Array.from(depts).sort();
   }, [employees]);
@@ -194,7 +200,7 @@ const App: React.FC = () => {
         if (data.items && Array.isArray(data.items)) setItems(data.items);
         
         if (data.updates) {
-           const normalizedUpdates = data.updates.map(u => ({
+           const normalizedUpdates = data.updates.map((u: MonthlyUpdate) => ({
               ...u,
               id: String(u.id),
               goalId: String(u.goalId),
@@ -227,8 +233,8 @@ const App: React.FC = () => {
             };
           });
           setRocks(stylizedRocks);
-        } else if (data.items.length > 0) {
-           const distinctGoalIds = Array.from(new Set(data.items.map(i => i.goalId)));
+        } else if (data.items && data.items.length > 0) {
+           const distinctGoalIds = Array.from(new Set(data.items.map((i: RoadmapItem) => i.goalId)));
            const tempRocks = distinctGoalIds.map((gid, idx) => ({
              id: String(gid),
              title: `Goal ${gid}`,
@@ -248,6 +254,10 @@ const App: React.FC = () => {
           }
           setEmployees(data.employees);
         }
+        if (data.projects && Array.isArray(data.projects)) setProjects(data.projects);
+        if (data.projectTasks && Array.isArray(data.projectTasks)) setProjectTasks(data.projectTasks);
+        if (data.projectMilestones && Array.isArray(data.projectMilestones)) setProjectMilestones(data.projectMilestones);
+        if (data.taskMilestones && Array.isArray(data.taskMilestones)) setTaskMilestones(data.taskMilestones);
         setLastSync(new Date());
       }
     } catch (err: any) {
@@ -264,13 +274,13 @@ const App: React.FC = () => {
     try {
       const jiraIssues = await fetchJiraIssues(config);
       const mappedItems = await mapJiraToRoadmap(jiraIssues, rocks);
-      setItems(prev => {
-        const nonJira = prev.filter(i => !i.jiraId);
+      setItems((prev: RoadmapItem[]) => {
+        const nonJira = prev.filter((i: RoadmapItem) => !i.jiraId);
         return [...nonJira, ...mappedItems];
       });
       setLastSync(new Date());
-    } catch (err: any) {
-      alert(`Jira Sync Failed: ${err.message}`);
+    } catch (err: unknown) {
+      alert(`Jira Sync Failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsSyncing(false);
     }
@@ -309,7 +319,7 @@ const App: React.FC = () => {
             if (result.hibobGoalId) {
                 const updatedItem = { ...item, hibobGoalId: result.hibobGoalId };
                 console.log('[HiBob] Saving hibobGoalId:', result.hibobGoalId, 'for item:', item.id);
-                setItems(prev => prev.map(i => i.id === item.id ? updatedItem : i));
+                setItems((prev: RoadmapItem[]) => prev.map((i: RoadmapItem) => i.id === item.id ? updatedItem : i));
                 // Also save to sheet
                 sheetsService.upsertItem(updatedItem).catch(err => console.error('[HiBob] Failed to save hibobGoalId:', err));
                 
@@ -330,7 +340,7 @@ const App: React.FC = () => {
                                 config,
                                 checkInDate,
                                 update.content || '',
-                                update.health || 'GREEN'
+                                (String(update.health ?? 'green').toUpperCase() as 'GREEN' | 'AMBER' | 'RED')
                             );
                             
                             if (checkInResult.success || checkInResult.fallbackUsed) {
@@ -362,8 +372,8 @@ const App: React.FC = () => {
         } else {
             alert(`❌ Failed: ${result.message}`);
         }
-    } catch (e: any) {
-        alert("Error pushing goal: " + e.message);
+    } catch (e: unknown) {
+      alert("Error pushing goal: " + (e instanceof Error ? e.message : String(e)));
     } finally {
         setPushingItems(prev => {
             const next = new Set(prev);
@@ -377,6 +387,10 @@ const App: React.FC = () => {
     if (rbacFilteredItems.length === 0) return;
     setLoadingInsights(true);
     try {
+      if (!getAiEnabled()) {
+        setInsights([{ type: 'summary', message: 'AI insights are disabled. Enable AI features on the login page to use.', impactLevel: 'low' }]);
+        return;
+      }
       const result = await analyzeRoadmap(rbacFilteredItems, rocks, updates, itemUpdates);
       setInsights(result);
     } catch (err) {
@@ -428,9 +442,9 @@ const App: React.FC = () => {
 
   const saveItem = async (item: Partial<RoadmapItem>) => {
     const newItem = { ...item, id: item.id || `item-${Math.random().toString(36).substr(2, 5)}` };
-    setItems(prev => {
-      const exists = prev.find(i => i.id === newItem.id);
-      if (exists) return prev.map(i => i.id === newItem.id ? { ...i, ...newItem } : i);
+    setItems((prev: RoadmapItem[]) => {
+      const exists = prev.find((i: RoadmapItem) => i.id === newItem.id);
+      if (exists) return prev.map((i: RoadmapItem) => i.id === newItem.id ? { ...i, ...newItem } : i);
       return [...prev, newItem as RoadmapItem];
     });
     setActiveModal(null);
@@ -491,8 +505,8 @@ const App: React.FC = () => {
           // Note: Employee type doesn't include email, but we can try to find it
           // The backend will also try to extract it from the sheet
           let ownerEmail: string | undefined;
-          const ownerEmployee = employees.find(e => 
-            e.name === item.owner || 
+          employees.find((e: Employee) =>
+            e.name === item.owner ||
             e.id === item.owner ||
             e.name.toLowerCase().includes(item.owner.toLowerCase()) ||
             item.owner.toLowerCase().includes(e.name.toLowerCase())
@@ -508,7 +522,7 @@ const App: React.FC = () => {
               if (res.success && res.hibobGoalId) {
                   const updatedItem = { ...item, hibobGoalId: res.hibobGoalId };
                   console.log('[HiBob] Saving hibobGoalId to sheet:', res.hibobGoalId, 'for item:', item.id);
-                  setItems(prev => prev.map(i => i.id === item.id ? updatedItem : i));
+                  setItems((prev: RoadmapItem[]) => prev.map((i: RoadmapItem) => i.id === item.id ? updatedItem : i));
                   // Also save to sheet
                   sheetsService.upsertItem(updatedItem)
                     .then(success => console.log('[HiBob] Sheet upsert result:', success ? '✅ SUCCESS' : '❌ FAILED'))
@@ -530,7 +544,7 @@ const App: React.FC = () => {
                                       config,
                                       checkInDate,
                                       update.content || '',
-                                      update.health || 'GREEN'
+                                      (String(update.health ?? 'green').toUpperCase() as 'GREEN' | 'AMBER' | 'RED')
                                   );
                                   if (checkInResult.fallbackUsed) {
                                       console.log(`[HiBob] Check-in failed for "${item.title}", but goal update succeeded (appears as OmniMap activity)`);
@@ -556,12 +570,12 @@ const App: React.FC = () => {
                   success: res.success, 
                   message: res.message || (res.success ? 'Success' : 'Unknown error')
               });
-          } catch (e: any) {
+          } catch (e: unknown) {
               console.error(`[HiBob Push] Exception for ${item.title}:`, e);
-              results.push({ 
-                  title: item.title, 
-                  success: false, 
-                  message: e.message || 'Unknown network error'
+              results.push({
+                  title: item.title,
+                  success: false,
+                  message: e instanceof Error ? e.message : 'Unknown network error'
               });
           }
 
@@ -589,7 +603,7 @@ const App: React.FC = () => {
   };
 
   const handleBulkSave = async (newItems: RoadmapItem[], syncToHiBob: boolean) => {
-    setItems(prev => [...prev, ...newItems]);
+    setItems((prev: RoadmapItem[]) => [...prev, ...newItems]);
     setIsBulkOpen(false); 
     sheetsService.upsertItems(newItems).catch(err => console.error("Batch Sync failed", err));
 
@@ -598,14 +612,119 @@ const App: React.FC = () => {
     }
   };
 
-  const handleNewProjectSave = async (newGoal: StrategicGoal | null, newItems: RoadmapItem[]) => {
-    if (newGoal) {
-      setRocks(prev => [...prev, newGoal]);
-      sheetsService.upsertGoal(newGoal).catch(err => console.error("Goal sync failed", err));
-    }
-    setItems(prev => [...prev, ...newItems]);
+  const handleNewProjectSave = async (project: Project, tasks: ProjectTask[]) => {
+    setProjects((prev: Project[]) => [...prev, project]);
+    setProjectTasks((prev: ProjectTask[]) => [...prev, ...tasks]);
     setIsNewProjectOpen(false);
-    sheetsService.upsertItems(newItems).catch(err => console.error("Project items sync failed", err));
+    sheetsService.upsertProject(project).catch(err => console.error("Project sync failed", err));
+    sheetsService.upsertProjectTasks(tasks).catch(err => console.error("Project tasks sync failed", err));
+  };
+
+  const handleUpdateProject = async (project: Partial<Project> & { id: string }) => {
+    setProjects((prev: Project[]) => prev.map((p: Project) => p.id === project.id ? { ...p, ...project } : p));
+    await sheetsService.upsertProject(project).catch(err => console.error("Project update sync failed", err));
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    const taskIds = projectTasks.filter((t: ProjectTask) => t.projectId === projectId).map((t: ProjectTask) => t.id);
+    const projectMilestoneIds = projectMilestones.filter(m => m.projectId === projectId).map(m => m.id);
+    const taskMilestoneIds = taskMilestones.filter(m => taskIds.includes(m.taskId)).map(m => m.id);
+    for (const id of taskMilestoneIds) await sheetsService.deleteTaskMilestone(id).catch(() => {});
+    for (const id of taskIds) await sheetsService.deleteProjectTask(id).catch(() => {});
+    for (const id of projectMilestoneIds) await sheetsService.deleteProjectMilestone(id).catch(() => {});
+    await sheetsService.deleteProject(projectId).catch(err => console.error("Project delete sync failed", err));
+    setTaskMilestones((prev: TaskMilestone[]) => prev.filter((m: TaskMilestone) => !taskIds.includes(m.taskId)));
+    setProjectTasks((prev: ProjectTask[]) => prev.filter((t: ProjectTask) => t.projectId !== projectId));
+    setProjectMilestones((prev: ProjectMilestone[]) => prev.filter((m: ProjectMilestone) => m.projectId !== projectId));
+    setProjects((prev: Project[]) => prev.filter((p: Project) => p.id !== projectId));
+  };
+
+  const handleUpdateProjectTask = async (task: Partial<ProjectTask> & { id: string }) => {
+    setProjectTasks((prev: ProjectTask[]) => prev.map((t: ProjectTask) => t.id === task.id ? { ...t, ...task } : t));
+    await sheetsService.upsertProjectTasks([task]).catch(err => console.error("Task update sync failed", err));
+  };
+
+  const handleAddProjectTask = async (projectId: string, task: Omit<ProjectTask, 'id' | 'projectId' | 'createdAt'>) => {
+    const now = new Date().toISOString();
+    const existingOrders = projectTasks.filter(t => t.projectId === projectId).map(t => t.order ?? 0);
+    const nextOrder = existingOrders.length ? Math.max(...existingOrders) + 1 : 0;
+    const newTask: ProjectTask = {
+      ...task,
+      id: `pt-${Math.random().toString(36).substr(2, 6)}`,
+      projectId,
+      createdAt: now,
+      startDate: task.startDate || now.split('T')[0],
+      endDate: task.endDate || '2026-12-31',
+      order: nextOrder,
+    };
+    setProjectTasks((prev: ProjectTask[]) => [...prev, newTask]);
+    await sheetsService.upsertProjectTasks([newTask]).catch(err => console.error("Task add sync failed", err));
+  };
+
+  const handleDeleteProjectTask = async (taskId: string) => {
+    const tmIds = taskMilestones.filter((m: TaskMilestone) => m.taskId === taskId).map((m: TaskMilestone) => m.id);
+    for (const id of tmIds) await sheetsService.deleteTaskMilestone(id).catch(() => {});
+    setTaskMilestones((prev: TaskMilestone[]) => prev.filter((m: TaskMilestone) => m.taskId !== taskId));
+    setProjectTasks((prev: ProjectTask[]) => prev.filter((t: ProjectTask) => t.id !== taskId));
+    await sheetsService.deleteProjectTask(taskId).catch(err => console.error("Task delete sync failed", err));
+  };
+
+  const handleAddProjectMilestone = async (projectId: string, milestone: Omit<ProjectMilestone, 'id' | 'projectId' | 'completed'>) => {
+    const newMilestone: ProjectMilestone = {
+      ...milestone,
+      id: `pm-${Math.random().toString(36).substr(2, 6)}`,
+      projectId,
+      completed: false,
+    };
+    setProjectMilestones((prev: ProjectMilestone[]) => [...prev, newMilestone]);
+    await sheetsService.upsertProjectMilestone(newMilestone).catch(err => console.error("Milestone add sync failed", err));
+  };
+
+  const handleUpdateProjectMilestone = async (milestone: Partial<ProjectMilestone> & { id: string }) => {
+    setProjectMilestones((prev: ProjectMilestone[]) => prev.map((m: ProjectMilestone) => m.id === milestone.id ? { ...m, ...milestone } : m));
+    await sheetsService.upsertProjectMilestone(milestone).catch(err => console.error("Milestone update sync failed", err));
+  };
+
+  const handleToggleProjectMilestone = async (id: string, completed: boolean) => {
+    const m = projectMilestones.find((x: ProjectMilestone) => x.id === id);
+    if (!m) return;
+    const updated = { ...m, completed, completedAt: completed ? new Date().toISOString() : undefined };
+    setProjectMilestones((prev: ProjectMilestone[]) => prev.map((x: ProjectMilestone) => x.id === id ? updated : x));
+    await sheetsService.upsertProjectMilestone(updated).catch(err => console.error("Milestone toggle sync failed", err));
+  };
+
+  const handleDeleteProjectMilestone = async (milestoneId: string) => {
+    setProjectMilestones((prev: ProjectMilestone[]) => prev.filter((m: ProjectMilestone) => m.id !== milestoneId));
+    await sheetsService.deleteProjectMilestone(milestoneId).catch(err => console.error("Milestone delete sync failed", err));
+  };
+
+  const handleAddTaskMilestone = async (taskId: string, milestone: Omit<TaskMilestone, 'id' | 'taskId' | 'completed'>) => {
+    const newMilestone: TaskMilestone = {
+      ...milestone,
+      id: `tm-${Math.random().toString(36).substr(2, 6)}`,
+      taskId,
+      completed: false,
+    };
+    setTaskMilestones((prev: TaskMilestone[]) => [...prev, newMilestone]);
+    await sheetsService.upsertTaskMilestone(newMilestone).catch(err => console.error("Task milestone add sync failed", err));
+  };
+
+  const handleUpdateTaskMilestone = async (milestone: Partial<TaskMilestone> & { id: string }) => {
+    setTaskMilestones((prev: TaskMilestone[]) => prev.map((m: TaskMilestone) => m.id === milestone.id ? { ...m, ...milestone } : m));
+    await sheetsService.upsertTaskMilestone(milestone).catch(err => console.error("Task milestone update sync failed", err));
+  };
+
+  const handleToggleTaskMilestone = async (id: string, completed: boolean) => {
+    const m = taskMilestones.find((x: TaskMilestone) => x.id === id);
+    if (!m) return;
+    const updated = { ...m, completed, completedAt: completed ? new Date().toISOString() : undefined };
+    setTaskMilestones((prev: TaskMilestone[]) => prev.map((x: TaskMilestone) => x.id === id ? updated : x));
+    await sheetsService.upsertTaskMilestone(updated).catch(err => console.error("Task milestone toggle sync failed", err));
+  };
+
+  const handleDeleteTaskMilestone = async (milestoneId: string) => {
+    setTaskMilestones((prev: TaskMilestone[]) => prev.filter((m: TaskMilestone) => m.id !== milestoneId));
+    await sheetsService.deleteTaskMilestone(milestoneId).catch(err => console.error("Task milestone delete sync failed", err));
   };
 
   const handleBulkPush = async (existingItems: RoadmapItem[]) => {
@@ -615,12 +734,12 @@ const App: React.FC = () => {
 
   const handleAddSalesAction = async (action: Partial<SalesActionItem>) => {
     const newAction = { ...action, id: `action-${Math.random().toString(36).substr(2, 5)}` } as SalesActionItem;
-    setSalesActions(prev => [...prev, newAction]);
+    setSalesActions((prev: SalesActionItem[]) => [...prev, newAction]);
     sheetsService.upsertSalesAction(newAction).catch(err => console.error("Bg Sync failed", err));
   };
 
   const handleToggleSalesAction = async (id: string, isCompleted: boolean) => {
-    setSalesActions(prev => prev.map(a => a.id === id ? { ...a, isCompleted } : a));
+    setSalesActions((prev: SalesActionItem[]) => prev.map((a: SalesActionItem) => a.id === id ? { ...a, isCompleted } : a));
     sheetsService.toggleSalesAction(id, isCompleted).catch(err => console.error("Bg Sync failed", err));
   };
 
@@ -668,7 +787,7 @@ const App: React.FC = () => {
         <LoginScreen 
           employees={employees} 
           onLogin={setCurrentUser}
-          onAuthError={(error) => {
+          onAuthError={(error: string) => {
             console.error('Authentication error:', error);
             setSyncError(error);
           }}
@@ -723,7 +842,7 @@ const App: React.FC = () => {
             {tabs.map(tab => (
               <button 
                 key={tab.id}
-                onClick={() => setView(tab.id as any)}
+                onClick={() => setView(tab.id as 'alignment' | 'individual' | 'updates' | 'timeline' | 'sales' | 'projectmanager')}
                 className={`
                   px-4 py-2 rounded-md text-sm font-medium transition-all
                   ${view === tab.id 
@@ -831,11 +950,26 @@ const App: React.FC = () => {
           ) : view === 'projectmanager' && currentUser.accessLevel === 'Admin' ? (
             <ProjectManagerView
               currentUser={currentUser}
-              items={rbacFilteredItems}
+              projects={projects}
+              projectTasks={projectTasks}
+              projectMilestones={projectMilestones}
+              taskMilestones={taskMilestones}
               employees={rbacFilteredEmployees}
+              departments={uniqueDepts}
               onNewProjectClick={() => setIsNewProjectOpen(true)}
-              onEditItem={handleEditItem}
-              onViewHistory={handleViewHistory}
+              onUpdateProject={handleUpdateProject}
+              onDeleteProject={handleDeleteProject}
+              onUpdateTask={handleUpdateProjectTask}
+              onAddTask={handleAddProjectTask}
+              onDeleteTask={handleDeleteProjectTask}
+              onAddProjectMilestone={handleAddProjectMilestone}
+              onUpdateProjectMilestone={handleUpdateProjectMilestone}
+              onToggleProjectMilestone={handleToggleProjectMilestone}
+              onDeleteProjectMilestone={handleDeleteProjectMilestone}
+              onAddTaskMilestone={handleAddTaskMilestone}
+              onUpdateTaskMilestone={handleUpdateTaskMilestone}
+              onToggleTaskMilestone={handleToggleTaskMilestone}
+              onDeleteTaskMilestone={handleDeleteTaskMilestone}
             />
           ) : (
             <UnifiedTimeline items={rbacFilteredItems} onItemClick={handleViewHistory} />
@@ -863,7 +997,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* New Project Modal (project manager flow) */}
+      {/* New Project Modal (project manager) */}
       {currentUser && currentUser.accessLevel === 'Admin' && (
         <NewProjectModal
           isOpen={isNewProjectOpen}
@@ -948,7 +1082,7 @@ const App: React.FC = () => {
       <Modal isOpen={activeModal === 'goal'} onClose={() => setActiveModal(null)} title={editingGoal ? "Edit Big Rock" : "New Big Rock"}>
         <GoalForm goal={editingGoal} onSave={async (g) => { 
           const id = g.id || `goal-${Math.random().toString(36).substr(2, 5)}`;
-          setRocks(prev => editingGoal ? prev.map(old => old.id === id ? {...old, ...g} : old) : [...prev, { ...g, id } as StrategicGoal]);
+          setRocks((prev: StrategicGoal[]) => editingGoal ? prev.map((old: StrategicGoal) => old.id === id ? {...old, ...g} : old) : [...prev, { ...g, id } as StrategicGoal]);
           setActiveModal(null);
           sheetsService.upsertGoal({...g, id}).catch(err => console.error(err));
         }} onCancel={() => setActiveModal(null)} />
@@ -971,8 +1105,8 @@ const App: React.FC = () => {
               authorId: isEdit ? u.authorId! : currentUser.id 
             };
             
-            setUpdates(prev => {
-               if (isEdit) return prev.map(old => old.id === newUpdate.id ? { ...old, ...newUpdate } as MonthlyUpdate : old);
+            setUpdates((prev: MonthlyUpdate[]) => {
+               if (isEdit) return prev.map((old: MonthlyUpdate) => old.id === newUpdate.id ? { ...old, ...newUpdate } as MonthlyUpdate : old);
                return [...prev, newUpdate as MonthlyUpdate];
             });
             setActiveModal(null);
@@ -987,8 +1121,8 @@ const App: React.FC = () => {
             existingUpdate={editingItemUpdate}
             onSave={async (u) => {
                const newUpdate = { ...u, id: u.id || `i-upd-${Math.random().toString(36).substr(2, 5)}`, updatedAt: new Date().toISOString() };
-               setItemUpdates(prev => {
-                 const others = prev.filter(pu => pu.id !== newUpdate.id);
+               setItemUpdates((prev: ItemUpdate[]) => {
+                 const others = prev.filter((pu: ItemUpdate) => pu.id !== newUpdate.id);
                  return [...others, newUpdate as ItemUpdate];
                });
                setActiveModal(null);
@@ -1012,7 +1146,7 @@ const App: React.FC = () => {
                                    config,
                                    checkInDate,
                                    newUpdate.content || '',
-                                   newUpdate.health || 'GREEN'
+                                   (String(newUpdate.health ?? 'green').toUpperCase() as 'GREEN' | 'AMBER' | 'RED')
                                );
                                if (checkInResult.fallbackUsed) {
                                    console.log('[HiBob] Check-in failed, but goal update succeeded (appears as OmniMap activity)');
